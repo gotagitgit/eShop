@@ -17,6 +17,7 @@ Previous eShop versions:
 
 - Clone the eShop repository: https://github.com/dotnet/eshop
 - [Install & start Docker Desktop](https://docs.docker.com/engine/install/)
+- **Optional**: [Install Ollama in WSL](Docker/OLLAMA-WSL-SETUP.md) for local AI features (alternative to Azure OpenAI)
 
 #### Windows with Visual Studio
 - Install [Visual Studio 2022 version 17.10 or newer](https://visualstudio.microsoft.com/vs/).
@@ -65,6 +66,43 @@ get-WinGetConfiguration -file .\.configurations\vscode.dsc.yaml | Invoke-WinGetC
 > [!WARNING]
 > Remember to ensure that Docker is started
 
+#### Step 1: Start Infrastructure Containers
+
+Before running the application, start the required infrastructure containers using Docker Compose:
+
+```powershell
+# Navigate to the Docker folder
+cd Docker
+
+# Start all containers (Redis, RabbitMQ, PostgreSQL)
+docker-compose up -d
+
+# Verify containers are running
+docker-compose ps
+```
+
+The following services will be started:
+- **Redis** on port 6379
+- **RabbitMQ** on ports 5672 (AMQP) and 15672 (Management UI)
+- **PostgreSQL with pgvector** on port 5432
+
+See `Docker/README.md` for more details on managing these containers.
+
+##### Optional: Set Up Ollama for Local AI Features
+
+If you want to use AI-powered features (semantic product search, chatbot) without Azure OpenAI:
+
+1. Follow the [Ollama WSL Setup Guide](Docker/OLLAMA-WSL-SETUP.md) to install and configure Ollama
+2. The application is already configured to use Ollama when enabled in `src/eShop.AppHost/Program.cs`:
+   ```csharp
+   bool useOllama = true;  // Set to true to enable Ollama
+   ```
+3. Ensure Ollama is running in WSL before starting the application
+
+**Note**: AI features are optional. The application works without them, but you won't have semantic search or chatbot functionality.
+
+#### Step 2: Run the Application
+
 * (Windows only) Run the application from Visual Studio:
  - Open the `eShop.Web.slnf` file in Visual Studio
  - Ensure that `eShop.AppHost.csproj` is your startup project
@@ -81,7 +119,23 @@ Login to the dashboard at: http://localhost:19888/login?t=uniquelogincodeforyou
 
 > You may need to install ASP.NET Core HTTPS development certificates first, and then close all browser tabs. Learn more at https://aka.ms/aspnet/https-trust-dev-cert
 
-### Azure Open AI
+#### Stopping the Application
+
+To stop the infrastructure containers when done:
+
+```powershell
+cd Docker
+docker-compose down
+
+# To also remove all data volumes (clean slate)
+docker-compose down -v
+```
+
+### AI Features Configuration
+
+eShop supports AI-powered features like semantic product search and chatbot. You can use either Azure OpenAI or Ollama (local).
+
+#### Option 1: Azure OpenAI
 
 When using Azure OpenAI, inside *eShop.AppHost/appsettings.json*, add the following section:
 
@@ -94,10 +148,20 @@ When using Azure OpenAI, inside *eShop.AppHost/appsettings.json*, add the follow
 Replace the values with your own. Then, in the eShop.AppHost *Program.cs*, set this value to **true**
 
 ```csharp
-bool useOpenAI = false;
+bool useOpenAI = true;
 ```
 
-Here's additional guidance on the [.NET Aspire OpenAI component](https://learn.microsoft.com/dotnet/aspire/azureai/azureai-openai-component?tabs=dotnet-cli). 
+Here's additional guidance on the [.NET Aspire OpenAI component](https://learn.microsoft.com/dotnet/aspire/azureai/azureai-openai-component?tabs=dotnet-cli).
+
+#### Option 2: Ollama (Local AI)
+
+For local AI without cloud dependencies, follow the [Ollama WSL Setup Guide](Docker/OLLAMA-WSL-SETUP.md). The application is pre-configured to use Ollama when enabled:
+
+```csharp
+bool useOllama = true;  // Already set to true in Program.cs
+```
+
+**Note**: Only enable one AI provider at a time (either `useOpenAI` or `useOllama`, not both). 
 
 ### Use Azure Developer CLI
 

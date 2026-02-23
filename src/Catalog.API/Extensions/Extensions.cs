@@ -39,6 +39,19 @@ public static class Extensions
         {
             builder.AddOllamaApiClient("embedding")
                 .AddEmbeddingGenerator();
+            
+            // Configure longer timeout for Ollama HttpClient (CPU-based inference needs more time)
+            builder.Services.AddHttpClient("OllamaSharp")
+                .ConfigureHttpClient(client =>
+                {
+                    client.Timeout = TimeSpan.FromMinutes(5);
+                })
+                .AddStandardResilienceHandler(options =>
+                {
+                    options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
+                    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
+                    options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10); // Must be at least 2x attempt timeout
+                });
         }
         else if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("textEmbeddingModel")))
         {

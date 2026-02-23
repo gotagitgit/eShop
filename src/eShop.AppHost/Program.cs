@@ -4,18 +4,16 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 builder.AddForwardedHeaders();
 
-var redis = builder.AddRedis("redis");
-var rabbitMq = builder.AddRabbitMQ("eventbus")
-    .WithLifetime(ContainerLifetime.Persistent);
-var postgres = builder.AddPostgres("postgres")
-    .WithImage("ankane/pgvector")
-    .WithImageTag("latest")
-    .WithLifetime(ContainerLifetime.Persistent);
+// Connect to existing Docker containers (started via docker-compose in Docker folder)
+// These containers must be running before starting the application
+var redis = builder.AddConnectionString("redis");
+var rabbitMq = builder.AddConnectionString("eventbus");
+var postgres = builder.AddConnectionString("postgres");
 
-var catalogDb = postgres.AddDatabase("catalogdb");
-var identityDb = postgres.AddDatabase("identitydb");
-var orderDb = postgres.AddDatabase("orderingdb");
-var webhooksDb = postgres.AddDatabase("webhooksdb");
+var catalogDb = builder.AddConnectionString("catalogdb");
+var identityDb = builder.AddConnectionString("identitydb");
+var orderDb = builder.AddConnectionString("orderingdb");
+var webhooksDb = builder.AddConnectionString("webhooksdb");
 
 var launchProfileName = ShouldUseHttpForEndpoints() ? "http" : "https";
 
@@ -28,30 +26,29 @@ var identityEndpoint = identityApi.GetEndpoint(launchProfileName);
 
 var basketApi = builder.AddProject<Projects.Basket_API>("basket-api")
     .WithReference(redis)
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(rabbitMq)
     .WithEnvironment("Identity__Url", identityEndpoint);
-redis.WithParentRelationship(basketApi);
 
 var catalogApi = builder.AddProject<Projects.Catalog_API>("catalog-api")
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(rabbitMq)
     .WithReference(catalogDb);
 
 var orderingApi = builder.AddProject<Projects.Ordering_API>("ordering-api")
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
-    .WithReference(orderDb).WaitFor(orderDb)
+    .WithReference(rabbitMq)
+    .WithReference(orderDb)
     .WithHttpHealthCheck("/health")
     .WithEnvironment("Identity__Url", identityEndpoint);
 
 builder.AddProject<Projects.OrderProcessor>("order-processor")
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(rabbitMq)
     .WithReference(orderDb)
     .WaitFor(orderingApi); // wait for the orderingApi to be ready because that contains the EF migrations
 
 builder.AddProject<Projects.PaymentProcessor>("payment-processor")
-    .WithReference(rabbitMq).WaitFor(rabbitMq);
+    .WithReference(rabbitMq);
 
 var webHooksApi = builder.AddProject<Projects.Webhooks_API>("webhooks-api")
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(rabbitMq)
     .WithReference(webhooksDb)
     .WithEnvironment("Identity__Url", identityEndpoint);
 
@@ -71,7 +68,7 @@ var webApp = builder.AddProject<Projects.WebApp>("webapp", launchProfileName)
     .WithReference(basketApi)
     .WithReference(catalogApi)
     .WithReference(orderingApi)
-    .WithReference(rabbitMq).WaitFor(rabbitMq)
+    .WithReference(rabbitMq)
     .WithEnvironment("IdentityUrl", identityEndpoint);
 
 // set to true if you want to use OpenAI
@@ -81,10 +78,23 @@ if (useOpenAI)
     builder.AddOpenAI(catalogApi, webApp, OpenAITarget.OpenAI); // set to AzureOpenAI if you want to use Azure OpenAI
 }
 
-bool useOllama = false;
+// Set to true to use Ollama running in WSL (assumes Ollama is already running on localhost:11434)
+bool useOllama = true;
 if (useOllama)
 {
-    builder.AddOllama(catalogApi, webApp);
+    // Connect to existing Ollama instance in WSL instead of creating a Docker container
+    var embeddingConnection = builder.AddConnectionString("embedding");
+    var chatConnection = builder.AddConnectionString("chat");
+    
+    catalogApi.WithReference(embeddingConnection)
+        .WithEnvironment("OllamaEnabled", "true")
+        .WithEnvironment("Ollama__Endpoint", "http://localhost:11434")
+        .WithEnvironment("Ollama__EmbeddingModel", "all-minilm");
+    
+    webApp.WithReference(chatConnection)
+        .WithEnvironment("OllamaEnabled", "true")
+        .WithEnvironment("Ollama__Endpoint", "http://localhost:11434")
+        .WithEnvironment("Ollama__ChatModel", "llama3.2");
 }
 
 // Wire up the callback urls (self referencing)
