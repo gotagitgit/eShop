@@ -18,7 +18,8 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" />
-    <PackageReference Include="CommunityToolkit.Aspire.OllamaSharp" />
+    <PackageReference Include="Pgvector" />
+    <PackageReference Include="Pgvector.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -29,11 +30,14 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- OpenSearch -->
+  <ItemGroup>
+    <PackageReference Include="OpenSearch.Net" />
+  </ItemGroup>
+
   <!-- AI -->
   <ItemGroup>
     <PackageReference Include="Aspire.Azure.AI.OpenAI" />
-    <PackageReference Include="Pgvector" />
-    <PackageReference Include="Pgvector.EntityFrameworkCore" />
   </ItemGroup>
 
   <ItemGroup>

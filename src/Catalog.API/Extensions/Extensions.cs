@@ -1,4 +1,5 @@
 ﻿using eShop.Catalog.API.Services;
+using OpenSearch.Net;
 
 public static class Extensions
 {
@@ -12,13 +13,7 @@ public static class Extensions
             return;
         }
 
-        builder.AddNpgsqlDbContext<CatalogContext>("catalogdb", configureDbContextOptions: dbContextOptionsBuilder =>
-        {
-            dbContextOptionsBuilder.UseNpgsql(builder =>
-            {
-                builder.UseVector();
-            });
-        });
+        builder.AddNpgsqlDbContext<CatalogContext>("catalogdb");
 
         // REVIEW: This is done for development ease but shouldn't be here in production
         builder.Services.AddMigration<CatalogContext, CatalogContextSeed>();
@@ -35,30 +30,38 @@ public static class Extensions
         builder.Services.AddOptions<CatalogOptions>()
             .BindConfiguration(nameof(CatalogOptions));
 
-        if (builder.Configuration["OllamaEnabled"] is string ollamaEnabled && bool.Parse(ollamaEnabled))
+        // OpenSearch configuration
+        builder.Services.Configure<OpenSearchOptions>(builder.Configuration.GetSection("OpenSearch"));
+
+        var openSearchOptions = builder.Configuration.GetSection("OpenSearch").Get<OpenSearchOptions>();
+
+        // Aspire injects the endpoint as a connection string; map it to the options if not set directly
+        if (string.IsNullOrWhiteSpace(openSearchOptions?.Endpoint))
         {
-            builder.AddOllamaApiClient("embedding")
-                .AddEmbeddingGenerator();
-            
-            // Configure longer timeout for Ollama HttpClient (CPU-based inference needs more time)
-            builder.Services.AddHttpClient("OllamaSharp")
-                .ConfigureHttpClient(client =>
-                {
-                    client.Timeout = TimeSpan.FromMinutes(5);
-                })
-                .AddStandardResilienceHandler(options =>
-                {
-                    options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
-                    options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(5);
-                    options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10); // Must be at least 2x attempt timeout
-                });
-        }
-        else if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("textEmbeddingModel")))
-        {
-            builder.AddOpenAIClientFromConfiguration("textEmbeddingModel")
-                .AddEmbeddingGenerator();
+            var connectionString = builder.Configuration.GetConnectionString("opensearch");
+            if (!string.IsNullOrWhiteSpace(connectionString))
+            {
+                openSearchOptions ??= new OpenSearchOptions();
+                openSearchOptions.Endpoint = connectionString;
+                builder.Services.PostConfigure<OpenSearchOptions>(o => o.Endpoint = connectionString);
+            }
         }
 
-        builder.Services.AddScoped<ICatalogAI, CatalogAI>();
+        if (openSearchOptions?.Enabled == true && !string.IsNullOrWhiteSpace(openSearchOptions.Endpoint))
+        {
+            builder.Services.AddSingleton<OpenSearchLowLevelClient>(sp =>
+            {
+                var options = sp.GetRequiredService<IOptions<OpenSearchOptions>>().Value;
+                var settings = new ConnectionConfiguration(new Uri(options.Endpoint!));
+                return new OpenSearchLowLevelClient(settings);
+            });
+
+            builder.Services.AddScoped<ICatalogSearch, OpenSearchSearchService>();
+            builder.Services.AddHostedService<OpenSearchInitializationService>();
+        }
+        else
+        {
+            builder.Services.AddScoped<ICatalogSearch, FallbackCatalogSearch>();
+        }
     }
 }

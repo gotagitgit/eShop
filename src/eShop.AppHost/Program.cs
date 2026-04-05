@@ -14,6 +14,7 @@ var catalogDb = builder.AddConnectionString("catalogdb");
 var identityDb = builder.AddConnectionString("identitydb");
 var orderDb = builder.AddConnectionString("orderingdb");
 var webhooksDb = builder.AddConnectionString("webhooksdb");
+var opensearch = builder.AddConnectionString("opensearch");
 
 var launchProfileName = ShouldUseHttpForEndpoints() ? "http" : "https";
 
@@ -31,7 +32,8 @@ var basketApi = builder.AddProject<Projects.Basket_API>("basket-api")
 
 var catalogApi = builder.AddProject<Projects.Catalog_API>("catalog-api")
     .WithReference(rabbitMq)
-    .WithReference(catalogDb);
+    .WithReference(catalogDb)
+    .WithReference(opensearch);
 
 var orderingApi = builder.AddProject<Projects.Ordering_API>("ordering-api")
     .WithReference(rabbitMq)
@@ -83,13 +85,7 @@ bool useOllama = true;
 if (useOllama)
 {
     // Connect to existing Ollama instance in WSL instead of creating a Docker container
-    var embeddingConnection = builder.AddConnectionString("embedding");
     var chatConnection = builder.AddConnectionString("chat");
-    
-    catalogApi.WithReference(embeddingConnection)
-        .WithEnvironment("OllamaEnabled", "true")
-        .WithEnvironment("Ollama__Endpoint", "http://localhost:11434")
-        .WithEnvironment("Ollama__EmbeddingModel", "all-minilm");
     
     webApp.WithReference(chatConnection)
         .WithEnvironment("OllamaEnabled", "true")

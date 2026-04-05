@@ -1,9 +1,7 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
-using Pgvector.EntityFrameworkCore;
 
 namespace eShop.Catalog.API;
 
@@ -242,50 +240,36 @@ public static class CatalogApi
         var pageSize = paginationRequest.PageSize;
         var pageIndex = paginationRequest.PageIndex;
 
-        if (!services.CatalogAI.IsEnabled)
+        if (!services.CatalogSearch.IsEnabled)
         {
             return await GetItemsByName(paginationRequest, services, text);
         }
 
-        // Create an embedding for the input search
-        var vector = await services.CatalogAI.GetEmbeddingAsync(text);
+        // Delegate search to OpenSearch
+        var searchResults = await services.CatalogSearch.SearchAsync(text, pageIndex, pageSize);
 
-        if (vector is null)
+        if (searchResults.Count == 0)
         {
             return await GetItemsByName(paginationRequest, services, text);
         }
+
+        var searchIds = searchResults.Select(r => r.Id).ToList();
+
+        // Fetch full CatalogItem entities from PostgreSQL by the returned IDs
+        var items = await services.Context.CatalogItems
+            .Where(c => searchIds.Contains(c.Id))
+            .ToListAsync();
+
+        // Preserve OpenSearch score order
+        var itemsOnPage = searchIds
+            .Select(id => items.FirstOrDefault(i => i.Id == id))
+            .Where(i => i is not null)
+            .ToList();
 
         // Get the total number of items
-        var totalItems = await services.Context.CatalogItems
-            .LongCountAsync();
+        var totalItems = await services.Context.CatalogItems.LongCountAsync();
 
-        // Get the next page of items, ordered by most similar (smallest distance) to the input search
-        List<CatalogItem> itemsOnPage;
-        if (services.Logger.IsEnabled(LogLevel.Debug))
-        {
-            var itemsWithDistance = await services.Context.CatalogItems
-                .Where(c => c.Embedding != null)
-                .Select(c => new { Item = c, Distance = c.Embedding!.CosineDistance(vector) })
-                .OrderBy(c => c.Distance)
-                .Skip(pageSize * pageIndex)
-                .Take(pageSize)
-                .ToListAsync();
-
-            services.Logger.LogDebug("Results from {text}: {results}", text, string.Join(", ", itemsWithDistance.Select(i => $"{i.Item.Name} => {i.Distance}")));
-
-            itemsOnPage = itemsWithDistance.Select(i => i.Item).ToList();
-        }
-        else
-        {
-            itemsOnPage = await services.Context.CatalogItems
-                .Where(c => c.Embedding != null)
-                .OrderBy(c => c.Embedding!.CosineDistance(vector))
-                .Skip(pageSize * pageIndex)
-                .Take(pageSize)
-                .ToListAsync();
-        }
-
-        return TypedResults.Ok(new PaginatedItems<CatalogItem>(pageIndex, pageSize, totalItems, itemsOnPage));
+        return TypedResults.Ok(new PaginatedItems<CatalogItem>(pageIndex, pageSize, totalItems, itemsOnPage!));
     }
 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -340,8 +324,6 @@ public static class CatalogApi
         var catalogEntry = services.Context.Entry(catalogItem);
         catalogEntry.CurrentValues.SetValues(productToUpdate);
 
-        catalogItem.Embedding = await services.CatalogAI.GetEmbeddingAsync(catalogItem);
-
         var priceEntry = catalogEntry.Property(i => i.Price);
 
         if (priceEntry.IsModified) // Save product's data and publish integration event through the Event Bus if price has changed
@@ -354,10 +336,16 @@ public static class CatalogApi
 
             // Publish through the Event Bus and mark the saved event as published
             await services.EventService.PublishThroughEventBusAsync(priceChangedEvent);
+
+            // Fire-and-forget: sync to OpenSearch index
+            _ = Task.Run(async () => { try { await services.CatalogSearch.IndexDocumentAsync(catalogItem); } catch { } });
         }
         else // Just save the updated product because the Product's Price hasn't changed.
         {
             await services.Context.SaveChangesAsync();
+
+            // Fire-and-forget: sync to OpenSearch index
+            _ = Task.Run(async () => { try { await services.CatalogSearch.IndexDocumentAsync(catalogItem); } catch { } });
         }
         return TypedResults.Created($"/api/catalog/items/{id}");
     }
@@ -379,10 +367,12 @@ public static class CatalogApi
             RestockThreshold = product.RestockThreshold,
             MaxStockThreshold = product.MaxStockThreshold
         };
-        item.Embedding = await services.CatalogAI.GetEmbeddingAsync(item);
 
         services.Context.CatalogItems.Add(item);
         await services.Context.SaveChangesAsync();
+
+        // Fire-and-forget: sync to OpenSearch index
+        _ = Task.Run(async () => { try { await services.CatalogSearch.IndexDocumentAsync(item); } catch { } });
 
         return TypedResults.Created($"/api/catalog/items/{item.Id}");
     }
@@ -400,6 +390,10 @@ public static class CatalogApi
 
         services.Context.CatalogItems.Remove(item);
         await services.Context.SaveChangesAsync();
+
+        // Fire-and-forget: sync deletion to OpenSearch index
+        _ = Task.Run(async () => { try { await services.CatalogSearch.DeleteDocumentAsync(id); } catch { } });
+
         return TypedResults.NoContent();
     }
 
