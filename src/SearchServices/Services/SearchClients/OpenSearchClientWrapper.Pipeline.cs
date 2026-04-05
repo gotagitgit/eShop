@@ -54,14 +54,14 @@ internal partial class OpenSearchClientWrapper
         SearchPipelineConfig config,
         CancellationToken cancellationToken)
     {
-        var body = new
+        var body = new Dictionary<string, object>
         {
-            description = "Search pipeline for hybrid score normalization",
-            phase_results_processors = new object[]
+            ["description"] = "Search pipeline for hybrid score normalization",
+            ["phase_results_processors"] = new object[]
             {
-                new
+                new Dictionary<string, object>
                 {
-                    normalization_processor = new
+                    ["normalization-processor"] = new
                     {
                         normalization = new { technique = config.NormalizationTechnique },
                         combination = new

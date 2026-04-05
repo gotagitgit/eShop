@@ -17,7 +17,7 @@ internal sealed partial class OpenSearchClientWrapper : IOpenSearchClientWrapper
     public async Task<OpenSearchResponse> CheckClusterHealthAsync(CancellationToken cancellationToken)
     {
         var response = await _client.Cluster.HealthAsync(ct: cancellationToken);
-        return new OpenSearchResponse(response.IsValid);
+        return new OpenSearchResponse(response.IsValid, response.ApiCall?.HttpStatusCode ?? 0);
     }
 
     public async Task<Models.OpenSearchResponse> UpdateClusterSettingsAsync(
@@ -33,7 +33,7 @@ internal sealed partial class OpenSearchClientWrapper : IOpenSearchClientWrapper
             }),
             cancellationToken);
 
-        return new OpenSearchResponse(response.IsValid, response.DebugInformation);
+        return new OpenSearchResponse(response.IsValid, response.ApiCall?.HttpStatusCode ?? 0, response.DebugInformation);
     }
 
     public async Task<Models.OpenSearchResponse> GetIngestPipelineAsync(
@@ -41,6 +41,6 @@ internal sealed partial class OpenSearchClientWrapper : IOpenSearchClientWrapper
         CancellationToken cancellationToken)
     {
         var response = await _client.Ingest.GetPipelineAsync(g => g.Id(pipelineName), cancellationToken);
-        return new OpenSearchResponse(response.IsValid);
+        return new OpenSearchResponse(response.IsValid, response.ApiCall?.HttpStatusCode ?? 0);
     }
 }
