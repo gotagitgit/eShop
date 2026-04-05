@@ -8,6 +8,8 @@
       "src\\EventBus\\EventBus.csproj",
       "src\\Identity.API\\Identity.API.csproj",
       "src\\IntegrationEventLogEF\\IntegrationEventLogEF.csproj",
+      "src\\OpenSearch.Setup\\OpenSearch.Setup.csproj",
+      "src\\SearchServices\\SearchServices.csproj",
       "src\\Ordering.API\\Ordering.API.csproj",
       "src\\OrderProcessor\\OrderProcessor.csproj",
       "src\\Ordering.Domain\\Ordering.Domain.csproj",

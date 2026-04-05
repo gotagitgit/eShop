@@ -42,6 +42,36 @@ services:
       - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  opensearch:
+    image: opensearchproject/opensearch:2.17.0
+    container_name: eshop-opensearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin
+    networks:
+      - eshop-network
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - ./opensearch/models:/tmp/models
+    restart: unless-stopped
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.17.0
+    container_name: eshop-opensearch-dashboards
+    ports:
+      - "5601:5601"
+    environment:
+      - OPENSEARCH_HOSTS=["http://eshop-opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    networks:
+      - eshop-network
+    depends_on:
+      - opensearch
+    restart: unless-stopped
+
 networks:
   eshop-network:
     driver: bridge
@@ -49,3 +79,4 @@ networks:
 volumes:
   rabbitmq-data:
   postgres-data:
+  opensearch-data:
